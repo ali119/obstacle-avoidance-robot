@@ -1,1 +1,62 @@
+#include <Servo.h>
 
+const int TRIG = 9, ECHO = 10;
+const int ENA = 5, IN1 = 2, IN2 = 3;   // left motor
+const int ENB = 6, IN3 = 4, IN4 = 7;   // right motor
+const int SERVO_PIN = 11;
+const int SAFE_DISTANCE_CM = 20;
+const int SPEED = 150;
+
+Servo scanner;
+
+// Pure logic: easy to unit test
+enum Action { FORWARD, TURN_LEFT, TURN_RIGHT, STOP };
+
+Action decide(int front, int left, int right) {
+  if (front > SAFE_DISTANCE_CM) return FORWARD;
+  if (left < SAFE_DISTANCE_CM && right < SAFE_DISTANCE_CM) return STOP;
+  return (left > right) ? TURN_LEFT : TURN_RIGHT;
+}
+
+// Hardware code
+int readDistanceCm() {
+  digitalWrite(TRIG, LOW);  delayMicroseconds(2);
+  digitalWrite(TRIG, HIGH); delayMicroseconds(10);
+  digitalWrite(TRIG, LOW);
+  long t = pulseIn(ECHO, HIGH, 30000);
+  return t == 0 ? 400 : t * 0.034 / 2;
+}
+
+void drive(int l, int r) {
+  digitalWrite(IN1, l > 0); digitalWrite(IN2, l < 0);
+  digitalWrite(IN3, r > 0); digitalWrite(IN4, r < 0);
+  analogWrite(ENA, abs(l)); analogWrite(ENB, abs(r));
+}
+
+int lookAt(int angle) {
+  scanner.write(angle); delay(400);
+  int d = readDistanceCm();
+  scanner.write(90);
+  return d;
+}
+
+void setup() {
+  pinMode(TRIG, OUTPUT); pinMode(ECHO, INPUT);
+  for (int p : {ENA, IN1, IN2, ENB, IN3, IN4}) pinMode(p, OUTPUT);
+  scanner.attach(SERVO_PIN);
+  scanner.write(90);
+}
+
+void loop() {
+  int front = readDistanceCm();
+  if (front > SAFE_DISTANCE_CM) { drive(SPEED, SPEED); return; }
+
+  drive(0, 0);
+  int left = lookAt(160), right = lookAt(20);
+
+  switch (decide(front, left, right)) {
+    case TURN_LEFT:  drive(-SPEED, SPEED); delay(400); break;
+    case TURN_RIGHT: drive(SPEED, -SPEED); delay(400); break;
+    default:         drive(-SPEED, -SPEED); delay(500); break;
+  }
+}
